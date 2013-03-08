@@ -336,8 +336,10 @@ class NfsDriverTestCase(test.TestCase):
         drv = self._driver
 
         df_avail = 1490560
+        df_used = 2620544
         df_head = 'Filesystem 1K-blocks Used Available Use% Mounted on\n'
-        df_data = 'nfs-host:/export 2620544 996864 %d 41%% /mnt' % df_avail
+        df_data = 'nfs-host:/export %d 996864 %d 41%% /mnt' % (df_used,
+                                                               df_avail)
         df_output = df_head + df_data
 
         self.configuration.nfs_disk_util = 'df'
@@ -352,7 +354,7 @@ class NfsDriverTestCase(test.TestCase):
 
         mox.ReplayAll()
 
-        self.assertEquals(df_avail,
+        self.assertEquals((df_avail, df_used),
                           drv._get_available_capacity(self.TEST_NFS_EXPORT1))
 
         mox.VerifyAll()
@@ -390,7 +392,7 @@ class NfsDriverTestCase(test.TestCase):
 
         mox.ReplayAll()
 
-        self.assertEquals(df_total_size - du_used,
+        self.assertEquals((df_total_size - du_used, du_used),
                           drv._get_available_capacity(self.TEST_NFS_EXPORT1))
 
         mox.VerifyAll()
@@ -517,9 +519,9 @@ class NfsDriverTestCase(test.TestCase):
 
         mox.StubOutWithMock(drv, '_get_available_capacity')
         drv._get_available_capacity(self.TEST_NFS_EXPORT1).\
-            AndReturn(2 * self.ONE_GB_IN_BYTES)
+            AndReturn((2 * self.ONE_GB_IN_BYTES, self.ONE_GB_IN_BYTES))
         drv._get_available_capacity(self.TEST_NFS_EXPORT2).\
-            AndReturn(3 * self.ONE_GB_IN_BYTES)
+            AndReturn((3 * self.ONE_GB_IN_BYTES, self.ONE_GB_IN_BYTES))
 
         mox.ReplayAll()
 
@@ -537,9 +539,9 @@ class NfsDriverTestCase(test.TestCase):
 
         mox.StubOutWithMock(drv, '_get_available_capacity')
         drv._get_available_capacity(self.TEST_NFS_EXPORT1).\
-            AndReturn(0)
+            AndReturn((0, 0))
         drv._get_available_capacity(self.TEST_NFS_EXPORT2).\
-            AndReturn(0)
+            AndReturn((0, 0))
 
         mox.ReplayAll()
 
@@ -727,5 +729,26 @@ class NfsDriverTestCase(test.TestCase):
         mox.ReplayAll()
 
         drv.delete_volume(volume)
+
+        mox.VerifyAll()
+
+    def test_get_volume_stats(self):
+        """_find_share simple use case."""
+        mox = self._mox
+        drv = self._driver
+
+        drv._mounted_shares = [self.TEST_NFS_EXPORT1, self.TEST_NFS_EXPORT2]
+
+        mox.StubOutWithMock(drv, '_get_available_capacity')
+        drv._get_available_capacity(self.TEST_NFS_EXPORT1).\
+            AndReturn((2 * self.ONE_GB_IN_BYTES, self.ONE_GB_IN_BYTES))
+        drv._get_available_capacity(self.TEST_NFS_EXPORT2).\
+            AndReturn((3 * self.ONE_GB_IN_BYTES, self.ONE_GB_IN_BYTES))
+
+        mox.ReplayAll()
+
+        drv.get_volume_stats()
+        self.assertEqual(self._stats['total_capacity_gb'], 5)
+        self.assertEqual(self._stats['free_capacity_gb'], 3)
 
         mox.VerifyAll()

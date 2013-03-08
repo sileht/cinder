@@ -263,7 +263,7 @@ class NfsDriver(RemoteFsDriver):
         greatest_share = None
 
         for nfs_share in self._mounted_shares:
-            capacity = self._get_available_capacity(nfs_share)
+            capacity = self._get_available_capacity(nfs_share)[0]
             if capacity > greatest_size:
                 greatest_share = nfs_share
                 greatest_size = capacity
@@ -294,6 +294,7 @@ class NfsDriver(RemoteFsDriver):
 
         if self.configuration.nfs_disk_util == 'df':
             available = int(out.split()[3])
+            used = int(out.split()[2])
         else:
             size = int(out.split()[1])
             out, _ = self._execute('du', '-sb', '--apparent-size',
@@ -301,8 +302,9 @@ class NfsDriver(RemoteFsDriver):
                                    run_as_root=True)
             used = int(out.split()[0])
             available = size - used
+        free = available - used
 
-        return available
+        return available, free
 
     def _mount_nfs(self, nfs_share, mount_path, ensure=False):
         """Mount NFS share to mount path"""
@@ -322,3 +324,38 @@ class NfsDriver(RemoteFsDriver):
                 LOG.warn(_("%s is already mounted"), nfs_share)
             else:
                 raise
+
+    def get_volume_stats(self, refresh=False):
+        """Get volume status.
+
+        If 'refresh' is True, run update the stats first."""
+        if refresh:
+            self._update_volume_status()
+
+        return self._stats
+
+    def _update_volume_status(self):
+        """Retrieve status info from volume group."""
+
+        LOG.debug(_("Updating volume status"))
+        data = {}
+        backend_name = self.configuration.safe_get('volume_backend_name')
+        data["volume_backend_name"] = backend_name or 'Generic_NFS'
+        data["vendor_name"] = 'Open Source'
+        data["driver_version"] = '1.0'
+        data["storage_protocol"] = 'nfs'
+
+        self._ensure_shares_mounted()
+
+        global_capacity = 0
+        global_free = 0
+        for nfs_share in self._mounted_shares:
+            capacity, free = self._get_available_capacity(nfs_share)
+            global_capacity += capacity
+            global_free += free
+
+        data['total_capacity_gb'] = global_capacity / 1024 / 1024 / 1024
+        data['free_capacity_gb'] = global_free / 1024 / 1024 / 1024
+        data['reserved_percentage'] = 0
+        data['QoS_support'] = False
+        self._stats = data
